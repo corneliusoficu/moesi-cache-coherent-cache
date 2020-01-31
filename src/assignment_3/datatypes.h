@@ -9,6 +9,15 @@ enum BusRequest
     READX
 };
 
+enum LineState
+{
+    STATE_MODIFIED,
+    STATE_OWNED,
+    STATE_EXCLUSIVE,
+    STATE_SHARED,
+    STATE_INVALID
+};
+
 typedef struct
 {
     sc_mutex   access_mutex;

@@ -23,6 +23,8 @@ public:
     sc_in_rv<32>      port_bus_addr;
     sc_in<int>        port_bus_proc;
     sc_in<BusRequest> port_bus_valid;
+    sc_inout_rv<32>   port_cache_to_cache;
+    sc_in_rv<1>       port_do_i_have;
 
     bool can_snoop;
     
@@ -37,10 +39,10 @@ public:
 private:
     int id;
 
-    int     **cache;
-    int     **tags;
-    int     **cache_status;
-    u_int8_t *lru;
+    int       **cache;
+    int       **tags;
+    LineState **cache_status;
+    u_int8_t   *lru;
 
     int bit_mask_byte_in_line = create_mask(0,  4);
     int bit_mask_set_address  = create_mask(5, 11);
@@ -58,6 +60,7 @@ private:
     void snoop();
     void handle_snooped_value(int, BusRequest, int);
     void invalidate_cache_copy(int);
+    int  read_value_from_another_cache_or_memory(bool, int);
 };
 
 #endif

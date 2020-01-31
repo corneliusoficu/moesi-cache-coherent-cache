@@ -21,15 +21,17 @@ class Bus : public Bus_if, public sc_module
         sc_signal_rv<32>   port_bus_addr;
         sc_out<BusRequest> port_bus_valid;
         sc_out<int>        port_bus_proc;
+        sc_in_rv<1>        port_do_i_have;
 
         Bus(sc_module_name, int, int);
         ~Bus();
 
         virtual bool read(int, int);
-        virtual bool write(int, int, int);
+        virtual bool upgrade(int, int);
         virtual bool readx(int, int, int);
 
         virtual int  check_ongoing_requests(int, int, BusRequest);
+        virtual bool release_bus_mutex();
         virtual void release_mutex(int, int);
     
     private:

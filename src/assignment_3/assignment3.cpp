@@ -43,7 +43,9 @@ void init_bus_cpus_and_caches(Bus *bus, CPU** cpus,
                               Cache** caches, int nr_cpus, 
                               Memory* memory, sc_clock *clk, 
                               sc_signal<int> *sig_bus_proc,
-                              sc_signal<BusRequest> *sig_bus_valid)
+                              sc_signal<BusRequest> *sig_bus_valid,
+                              sc_signal_rv<32> *sig_cache_to_cache,
+                              sc_signal_rv<1> *sig_do_i_have)
 {   
     char name_cpu[20], name_cache[20];
 
@@ -54,6 +56,7 @@ void init_bus_cpus_and_caches(Bus *bus, CPU** cpus,
     bus->port_clk(*clk);
     bus->port_bus_proc(*sig_bus_proc);
     bus->port_bus_valid(*sig_bus_valid);
+    bus->port_do_i_have(*sig_do_i_have);
 
     for(int index = 0; index < nr_cpus; index++)
     {
@@ -70,6 +73,9 @@ void init_bus_cpus_and_caches(Bus *bus, CPU** cpus,
         cache->port_bus_addr(bus->port_bus_addr);
         cache->port_bus_proc(*sig_bus_proc);
         cache->port_bus_valid(*sig_bus_valid);
+        cache->port_cache_to_cache(*sig_cache_to_cache);
+        cache->port_do_i_have(*sig_do_i_have);
+
         cache->can_snoop = true;
         cache->port_clk(*clk);
 
@@ -108,8 +114,11 @@ int sc_main(int argc, char* argv[])
         sc_clock              clk;
         sc_signal<int>        sig_bus_proc;
         sc_signal<BusRequest> sig_bus_valid;
+        sc_signal_rv<32>      sig_cache_to_cache;
+        sc_signal_rv<1>       sig_do_i_have;
 
-        init_bus_cpus_and_caches(bus, cpus, caches, nr_processors, memory, &clk, &sig_bus_proc, &sig_bus_valid);
+        init_bus_cpus_and_caches(bus, cpus, caches, nr_processors, memory, &clk, 
+                                 &sig_bus_proc, &sig_bus_valid, &sig_cache_to_cache, &sig_do_i_have);
 
         sc_start();
 

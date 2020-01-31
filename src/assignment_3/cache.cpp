@@ -27,19 +27,19 @@ void Cache::initialize_cache_arrays()
 {
     cache                   = new int*[CACHE_NUMBER_OF_SETS];
     tags                    = new int*[CACHE_NUMBER_OF_SETS]; 
-    cache_status            = new int*[CACHE_NUMBER_OF_SETS];
+    cache_status            = new LineState*[CACHE_NUMBER_OF_SETS];
     lru                     = new u_int8_t[CACHE_NUMBER_OF_SETS];
 
     for(int i = 0; i < CACHE_NUMBER_OF_SETS; i++)
     {
         cache[i]                  = new int[CACHE_NUMBER_OF_LINES_IN_SET * CACHE_LINE_SIZE_BYTES];
         tags[i]                   = new int[CACHE_NUMBER_OF_LINES_IN_SET];
-        cache_status[i]           = new int[CACHE_NUMBER_OF_LINES_IN_SET];
+        cache_status[i]           = new LineState[CACHE_NUMBER_OF_LINES_IN_SET];
 
         for(int j = 0; j < CACHE_NUMBER_OF_LINES_IN_SET; j++)
         {
             tags[i][j]         = -1;
-            cache_status[i][j] =  1; 
+            cache_status[i][j] = LineState::STATE_INVALID; 
         }
     }
 }
@@ -58,7 +58,7 @@ int Cache::get_index_of_line_in_set(int set_index, int tag)
 {
     for(int index = 0; index < CACHE_NUMBER_OF_LINES_IN_SET; index++)
     {
-        if(cache_status[set_index][index] == 1 && tags[set_index][index] == tag)
+        if(cache_status[set_index][index] == LineState::STATE_SHARED && tags[set_index][index] == tag)
         {
             return index;
         }
@@ -109,7 +109,7 @@ int Cache::get_lru_line(int set_address)
 { 
     for(int i = 0; i < CACHE_NUMBER_OF_LINES_IN_SET; i++)
     {
-        if(cache_status[set_address][i] == 0)
+        if(cache_status[set_address][i] == LineState::STATE_INVALID)
         {
             return i;
         }
@@ -162,11 +162,31 @@ void Cache::extract_address_components(int addr, int *byte_in_line, int *set_add
     *tag          = (addr & bit_mask_tag) >> 12;  
 }
 
+int Cache::read_value_from_another_cache_or_memory(bool does_copy_exist, int address)
+{
+    int retrieved_data = port_cache_to_cache.read().to_int();
+    
+    if(retrieved_data != -1 && does_copy_exist)
+    {
+        bus->release_bus_mutex();
+        wait();
+    }
+    else
+    {
+        bus->release_bus_mutex();
+        wait(100); //Simulate memory read
+        retrieved_data = rand() % 100;
+    }
+
+    return retrieved_data;
+}
+
 int Cache::cpu_read(uint32_t addr)
 {
-    int byte_in_line, set_address, tag, locked_proc_id_mutex;
-    extract_address_components(addr, &byte_in_line, &set_address, &tag);
+    int retrieved_data, byte_in_line, set_address, tag, locked_proc_id_mutex;
+    bool does_copy_exist;
 
+    extract_address_components(addr, &byte_in_line, &set_address, &tag);
     int line_in_set_index = get_index_of_line_in_set(set_address, tag);
             
     if(line_in_set_index == -1)
@@ -175,18 +195,30 @@ int Cache::cpu_read(uint32_t addr)
         stats_readmiss(id);
         
         locked_proc_id_mutex = bus->check_ongoing_requests(id, addr, BusRequest::READ);
-        bus->read(id, addr);
+        
+        does_copy_exist = bus->read(id, addr);
+        retrieved_data  = read_value_from_another_cache_or_memory(does_copy_exist, addr);
         
         line_in_set_index = get_lru_line(set_address);
-        tags[set_address][line_in_set_index]         = tag;
-        cache_status[set_address][line_in_set_index] = 1;
+        tags[set_address][line_in_set_index] = tag;
         cache[set_address][line_in_set_index * CACHE_LINE_SIZE_BYTES + byte_in_line] = rand() % 1000 + 1;
         
+        if(does_copy_exist)
+        {
+            cache_status[set_address][line_in_set_index] = LineState::STATE_SHARED;
+        }
+        else
+        {
+            cache_status[set_address][line_in_set_index] = LineState::STATE_EXCLUSIVE;
+        }
+        
         bus->release_mutex(id, addr);
+        
         if(locked_proc_id_mutex != -1)
         {
             bus->release_mutex(locked_proc_id_mutex, addr);
         }
+
         wait();
     }
     else
@@ -203,7 +235,9 @@ int Cache::cpu_read(uint32_t addr)
 
 int Cache::cpu_write(uint32_t addr, uint32_t data)
 {
-    int byte_in_line, set_address, tag, locked_proc_id_mutex;
+    int byte_in_line, set_address, tag, locked_proc_id_mutex, retrieved_data;
+    bool does_copy_exist;
+    
     extract_address_components(addr, &byte_in_line, &set_address, &tag);
 
     int line_in_set_index = get_index_of_line_in_set(set_address, tag);
@@ -214,10 +248,12 @@ int Cache::cpu_write(uint32_t addr, uint32_t data)
         stats_writemiss(id);
 
         locked_proc_id_mutex = bus->check_ongoing_requests(id, addr, BusRequest::READX);
-        bus->readx(id, addr, data);
+        does_copy_exist = bus->readx(id, addr, data);
+
+        retrieved_data = read_value_from_another_cache_or_memory(does_copy_exist, addr);
 
         line_in_set_index = get_lru_line(set_address);
-        cache_status[set_address][line_in_set_index] = 1;
+        cache_status[set_address][line_in_set_index] = LineState::STATE_MODIFIED;
         update_lru(set_address, line_in_set_index);
         tags[set_address][line_in_set_index] = tag;
 
@@ -235,16 +271,23 @@ int Cache::cpu_write(uint32_t addr, uint32_t data)
         stats_writehit(id);
 
         locked_proc_id_mutex = bus->check_ongoing_requests(id, addr, BusRequest::WRITE);
-        bus->write(id, addr, data);
         
-        cache_status[set_address][line_in_set_index] = 1;
+        if(cache_status[set_address][line_in_set_index] == LineState::STATE_SHARED || 
+           cache_status[set_address][line_in_set_index] == LineState::STATE_OWNED)
+        {
+            bus->upgrade(id, addr);
+        }
+        
+        cache_status[set_address][line_in_set_index] = LineState::STATE_MODIFIED;
         update_lru(set_address, line_in_set_index);
 
         bus->release_mutex(id, addr);
+        
         if(locked_proc_id_mutex != -1)
         {
             bus->release_mutex(locked_proc_id_mutex, addr);
         }
+
         wait();
     }
 
@@ -260,9 +303,9 @@ void Cache::invalidate_cache_copy(int addr)
 
     for(int line_index = 0; line_index < CACHE_NUMBER_OF_LINES_IN_SET; line_index++)
     {
-        if(cache_status[set_address][line_index] == 1 && tags[set_address][line_index] == tag)
+        if(cache_status[set_address][line_index] == LineState::STATE_SHARED && tags[set_address][line_index] == tag)
         {
-            cache_status[set_address][line_index] = 0;
+            cache_status[set_address][line_index] = LineState::STATE_INVALID;
             Cache::invalidated_addresses_count++;
         }
     }
