@@ -4,9 +4,9 @@
 enum BusRequest
 {
     INVALID,
-    READ,
-    WRITE,
-    READX
+    READ_PROBE,
+    WRITE_PROBE_MISS,
+    WRITE_PROBE_HIT
 };
 
 enum LineState
@@ -20,10 +20,10 @@ enum LineState
 
 typedef struct
 {
-    sc_mutex   access_mutex;
-    int        address;
-    BusRequest request_type;
-} RequestContent;
+    int data;
+    int address;
+    LineState line_state;
+} DataLookup;
 
 #endif
 

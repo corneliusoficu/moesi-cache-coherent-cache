@@ -58,7 +58,7 @@ int Cache::get_index_of_line_in_set(int set_index, int tag)
 {
     for(int index = 0; index < CACHE_NUMBER_OF_LINES_IN_SET; index++)
     {
-        if(cache_status[set_index][index] == LineState::STATE_SHARED && tags[set_index][index] == tag)
+        if(cache_status[set_index][index] != LineState::STATE_INVALID && tags[set_index][index] == tag)
         {
             return index;
         }
@@ -116,58 +116,71 @@ int Cache::get_lru_line(int set_address)
     }
 
     u_int8_t lru_val = lru[set_address];
+    int line_index;
+    LineState lru_line_state;
 
     if( (lru_val & 11) == 0 )
     {
-        return 0;
+        line_index = 0;
     }
     else if( (lru_val & 11) == 8 )
     {
-        return 1;
+        line_index = 1;
     }
     else if( (lru_val & 19) == 2 )
     {
-        return 2;
+        line_index = 2;
     }
     else if( (lru_val & 19) == 18 )
     {
-        return 3;
+        line_index = 3;
     }
     else if( (lru_val & 37) == 1 )
     {
-        return 4;
+        line_index = 4;
     }
     else if( (lru_val & 37) == 33 )
     {
-        return 5;
+        line_index = 5;
     }
     else if( (lru_val & 69) == 5 )
     {
-        return 6;
+        line_index = 6;
     }
     else if( (lru_val & 69) == 69 )
     {
-        return 7;
+        line_index = 7;
     }
     else
     {
-        return -1;
+        line_index = -1;
     }
+
+    lru_line_state = cache_status[set_address][line_index];
+    
+    if(lru_line_state == LineState::STATE_MODIFIED || lru_line_state == LineState::STATE_OWNED || lru_line_state == STATE_EXCLUSIVE)
+    {
+        wait(100); //Simulate write to main memory
+    }
+
+    return line_index;
 }
 
 void Cache::extract_address_components(int addr, int *byte_in_line, int *set_address, int *tag)
 {
     *byte_in_line = (addr & bit_mask_byte_in_line);     // Obtaining value for bits 0 - 4, no shifting required
     *set_address  = (addr & bit_mask_set_address) >> 5; // Shifting to right to obtain value for bits 5  - 11
-    *tag          = (addr & bit_mask_tag) >> 12;  
+    *tag          = (addr & bit_mask_tag)         >> 12;  
 }
 
 int Cache::read_value_from_another_cache_or_memory(bool does_copy_exist, int address)
 {
-    int retrieved_data = port_cache_to_cache.read().to_int();
+    int retrieved_data;
     
-    if(retrieved_data != -1 && does_copy_exist)
+    if(port_cache_to_cache.read().to_int() != -1 && does_copy_exist && port_cache_to_cache.read() != "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ")
     {
+        cache_to_cache_transfers++;
+        retrieved_data = port_cache_to_cache.read().to_int();
         bus->release_bus_mutex();
         wait();
     }
@@ -183,7 +196,7 @@ int Cache::read_value_from_another_cache_or_memory(bool does_copy_exist, int add
 
 int Cache::cpu_read(uint32_t addr)
 {
-    int retrieved_data, byte_in_line, set_address, tag, locked_proc_id_mutex;
+    int retrieved_data, byte_in_line, set_address, tag;
     bool does_copy_exist;
 
     extract_address_components(addr, &byte_in_line, &set_address, &tag);
@@ -193,15 +206,13 @@ int Cache::cpu_read(uint32_t addr)
     {
         log(name(), "read miss on address", addr);
         stats_readmiss(id);
-        
-        locked_proc_id_mutex = bus->check_ongoing_requests(id, addr, BusRequest::READ);
-        
-        does_copy_exist = bus->read(id, addr);
+                
+        does_copy_exist = bus->read_probe(id, addr);
         retrieved_data  = read_value_from_another_cache_or_memory(does_copy_exist, addr);
         
         line_in_set_index = get_lru_line(set_address);
         tags[set_address][line_in_set_index] = tag;
-        cache[set_address][line_in_set_index * CACHE_LINE_SIZE_BYTES + byte_in_line] = rand() % 1000 + 1;
+        cache[set_address][line_in_set_index * CACHE_LINE_SIZE_BYTES + byte_in_line] = retrieved_data;
         
         if(does_copy_exist)
         {
@@ -211,31 +222,22 @@ int Cache::cpu_read(uint32_t addr)
         {
             cache_status[set_address][line_in_set_index] = LineState::STATE_EXCLUSIVE;
         }
-        
-        bus->release_mutex(id, addr);
-        
-        if(locked_proc_id_mutex != -1)
-        {
-            bus->release_mutex(locked_proc_id_mutex, addr);
-        }
-
-        wait();
     }
     else
     {
         log(name(), "read hit on address", addr);
         update_lru(set_address, line_in_set_index);
         stats_readhit(id);
-        wait();
     }
     
     update_lru(set_address, line_in_set_index);
+    wait();
     return 0;
 }
 
 int Cache::cpu_write(uint32_t addr, uint32_t data)
 {
-    int byte_in_line, set_address, tag, locked_proc_id_mutex, retrieved_data;
+    int byte_in_line, set_address, tag, retrieved_data;
     bool does_copy_exist;
     
     extract_address_components(addr, &byte_in_line, &set_address, &tag);
@@ -247,8 +249,7 @@ int Cache::cpu_write(uint32_t addr, uint32_t data)
         log(name(), "write miss on address", addr);
         stats_writemiss(id);
 
-        locked_proc_id_mutex = bus->check_ongoing_requests(id, addr, BusRequest::READX);
-        does_copy_exist = bus->readx(id, addr, data);
+        does_copy_exist = bus->write_probe(id, addr, true);
 
         retrieved_data = read_value_from_another_cache_or_memory(does_copy_exist, addr);
 
@@ -256,59 +257,27 @@ int Cache::cpu_write(uint32_t addr, uint32_t data)
         cache_status[set_address][line_in_set_index] = LineState::STATE_MODIFIED;
         update_lru(set_address, line_in_set_index);
         tags[set_address][line_in_set_index] = tag;
-
-        bus->release_mutex(id, addr);
-        if(locked_proc_id_mutex != -1)
-        {
-            bus->release_mutex(locked_proc_id_mutex, addr);
-        }
-
-        wait();
+        cache[set_address][line_in_set_index * CACHE_NUMBER_OF_LINES_IN_SET + byte_in_line] = retrieved_data;
     }
     else
     {
         log(name(), "write hit on address", addr);
         stats_writehit(id);
-
-        locked_proc_id_mutex = bus->check_ongoing_requests(id, addr, BusRequest::WRITE);
-        
+    
         if(cache_status[set_address][line_in_set_index] == LineState::STATE_SHARED || 
            cache_status[set_address][line_in_set_index] == LineState::STATE_OWNED)
         {
-            bus->upgrade(id, addr);
+            bus->write_probe(id, addr, false);
         }
         
         cache_status[set_address][line_in_set_index] = LineState::STATE_MODIFIED;
         update_lru(set_address, line_in_set_index);
-
-        bus->release_mutex(id, addr);
-        
-        if(locked_proc_id_mutex != -1)
-        {
-            bus->release_mutex(locked_proc_id_mutex, addr);
-        }
-
-        wait();
+        cache[set_address][line_in_set_index * CACHE_NUMBER_OF_LINES_IN_SET + byte_in_line] = data;
     }
 
-    cache[set_address][line_in_set_index * CACHE_NUMBER_OF_LINES_IN_SET] = data;
+    wait();
 
     return 0;
-}
-
-void Cache::invalidate_cache_copy(int addr)
-{
-    int byte_in_line, set_address, tag;
-    extract_address_components(addr, &byte_in_line, &set_address, &tag);
-
-    for(int line_index = 0; line_index < CACHE_NUMBER_OF_LINES_IN_SET; line_index++)
-    {
-        if(cache_status[set_address][line_index] == LineState::STATE_SHARED && tags[set_address][line_index] == tag)
-        {
-            cache_status[set_address][line_index] = LineState::STATE_INVALID;
-            Cache::invalidated_addresses_count++;
-        }
-    }
 }
 
 void Cache::snoop()
@@ -321,23 +290,100 @@ void Cache::snoop()
         BusRequest request_type = port_bus_valid.read();
         int proc_index          = port_bus_proc.read();
 
+        port_cache_to_cache.write("ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ");
+        port_do_i_have.write("Z");
+        port_provider.write("ZZZ");
+
         handle_snooped_value(snooped_address, request_type, proc_index); 
     }
 }
 
 void Cache::handle_snooped_value(int snooped_address, BusRequest request_type, int proc_index)
 {
+
+    DataLookup matched_data;
+
+    matched_data.data       = -1;
+    matched_data.line_state = LineState::STATE_INVALID;
+
     switch(request_type)
     {   
-        case WRITE:
-        case READX:
+        case READ_PROBE:
+        case WRITE_PROBE_HIT:
+        case WRITE_PROBE_MISS:
             if(proc_index != id)
             {
-                invalidate_cache_copy(snooped_address);
+                matched_data = coherence_lookup(snooped_address, request_type);
             }
             break;
-        case READ:
         case INVALID:
             break;
+        default:
+            break;
     }
+
+    if(matched_data.data != -1)
+    {
+        if(matched_data.line_state == LineState::STATE_MODIFIED || 
+           matched_data.line_state == LineState::STATE_OWNED || 
+           matched_data.line_state == LineState::STATE_EXCLUSIVE)
+        {
+            port_cache_to_cache.write(matched_data.data);
+            port_do_i_have.write(1);
+            port_provider.write(id);
+        }
+        else if(matched_data.line_state == LineState::STATE_SHARED)
+        {
+            port_do_i_have.write(1);
+        }
+    }
+
+}
+
+DataLookup Cache::coherence_lookup(int snooped_address, BusRequest bus_request)
+{
+    int byte_in_line, set_address, tag;
+    extract_address_components(snooped_address, &byte_in_line, &set_address, &tag);
+
+    bool is_found = false;
+
+    DataLookup found_data;
+
+    found_data.address    = -1;
+    found_data.data       = -1;
+    found_data.line_state = LineState::STATE_INVALID;
+
+    for(int line_index = 0; line_index < CACHE_NUMBER_OF_LINES_IN_SET; line_index++)
+    {
+        if(cache_status[set_address][line_index] != LineState::STATE_INVALID && tags[set_address][line_index] == tag && is_found == false)
+        {
+            found_data.line_state = cache_status[set_address][line_index];
+            found_data.data       = cache[set_address][line_index * CACHE_NUMBER_OF_LINES_IN_SET + byte_in_line];
+            found_data.address    = snooped_address;
+
+            switch(bus_request)
+            {
+                case BusRequest::READ_PROBE:
+                    if(found_data.line_state == LineState::STATE_MODIFIED || found_data.line_state == LineState::STATE_EXCLUSIVE)
+                    {
+                        cache_status[set_address][line_index] = LineState::STATE_OWNED;
+                    }
+                    break;
+                case BusRequest::WRITE_PROBE_MISS:
+                    cache_status[set_address][line_index] = LineState::STATE_INVALID;
+                    break;
+                case BusRequest::WRITE_PROBE_HIT:
+                    cache_status[set_address][line_index] = LineState::STATE_INVALID;
+                    found_data.data = -1;
+                    break;
+                case BusRequest::INVALID:
+                    break;
+            }
+
+            is_found = true;   
+        }
+    }
+
+    return found_data;
+
 }

@@ -10,23 +10,24 @@
 using namespace std;
 using namespace sc_core; // This pollutes namespace, better: only import what you need.
 
-long Cache::invalidated_addresses_count = 0;
+long Cache::cache_to_cache_transfers    = 0;
 
 void print_cache_and_bus_stats(Bus *bus)
-{
-    double avg_access_waiting_time = (double)bus->waits / (double)(bus->reads + bus->writes + bus->readXs);
+{   
 
-    double total_exec_time = sc_time_stamp().value()/1000;
+    long total_accesses            = bus->read_probes_miss + bus->write_probes_miss + bus->write_probes_hit;
+    double avg_access_waiting_time = (double)bus->waits / (double)total_accesses;
+    double total_exec_time         = sc_time_stamp().value()/1000;
 
-    printf("\nNumber of Bus reads: %ld\n", bus->reads);
-    printf("Number of Bus writes: %ld\n", bus->writes);
-    printf("Number of Bus readxs: %ld\n", bus->readXs);
-    printf("Total bus accesses: %ld\n", bus->reads + bus->readXs + bus->writes);
+    printf("\nNumber of Bus read probes: %ld\n", bus->read_probes_miss);
+    printf("Number of Bus write probe for miss': %ld\n", bus->write_probes_miss);
+    printf("Number of Bus write probe for hits: %ld\n", bus->write_probes_hit);
+    printf("Total bus accesses: %ld\n", total_accesses);
     printf("Number of waits for bus: %ld\n", bus->waits);
     printf("Bus avg waiting time per access: %.2f\n", avg_access_waiting_time);
     printf("Number of waits to maintain bus consistency: %ld\n", bus->consistency_waits);
-    printf("Nr of invalidated addresses while snooping the bus: %ld\n", Cache::invalidated_addresses_count);
-    printf("Average per memory access time: %.2f\n", total_exec_time / (double)(bus->reads + bus->readXs + bus->writes));
+    printf("Nr of cache to cache transfers: %ld\n", Cache::cache_to_cache_transfers);
+    printf("Average per memory access time: %.2f\n", total_exec_time / (double)total_accesses);
     printf("Total execution time: %.2f\n", total_exec_time);
 }
 
@@ -45,7 +46,7 @@ void init_bus_cpus_and_caches(Bus *bus, CPU** cpus,
                               sc_signal<int> *sig_bus_proc,
                               sc_signal<BusRequest> *sig_bus_valid,
                               sc_signal_rv<32> *sig_cache_to_cache,
-                              sc_signal_rv<1> *sig_do_i_have)
+                              sc_signal_rv<1> *sig_do_i_have, sc_signal_rv<3> *sig_provider)
 {   
     char name_cpu[20], name_cache[20];
 
@@ -75,6 +76,7 @@ void init_bus_cpus_and_caches(Bus *bus, CPU** cpus,
         cache->port_bus_valid(*sig_bus_valid);
         cache->port_cache_to_cache(*sig_cache_to_cache);
         cache->port_do_i_have(*sig_do_i_have);
+        cache->port_provider(*sig_provider);
 
         cache->can_snoop = true;
         cache->port_clk(*clk);
@@ -116,9 +118,10 @@ int sc_main(int argc, char* argv[])
         sc_signal<BusRequest> sig_bus_valid;
         sc_signal_rv<32>      sig_cache_to_cache;
         sc_signal_rv<1>       sig_do_i_have;
+        sc_signal_rv<3>       sig_provider;
 
         init_bus_cpus_and_caches(bus, cpus, caches, nr_processors, memory, &clk, 
-                                 &sig_bus_proc, &sig_bus_valid, &sig_cache_to_cache, &sig_do_i_have);
+                                 &sig_bus_proc, &sig_bus_valid, &sig_cache_to_cache, &sig_do_i_have, &sig_provider);
 
         sc_start();
 

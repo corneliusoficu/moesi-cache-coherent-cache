@@ -11,9 +11,9 @@ class Bus : public Bus_if, public sc_module
 {
     public:
         long waits;
-        long reads;
-        long writes;
-        long readXs;
+        long read_probes_miss;
+        long write_probes_hit;
+        long write_probes_miss;
         long consistency_waits;
 
         sc_in<bool>        port_clk;
@@ -26,19 +26,15 @@ class Bus : public Bus_if, public sc_module
         Bus(sc_module_name, int, int);
         ~Bus();
 
-        virtual bool read(int, int);
-        virtual bool upgrade(int, int);
-        virtual bool readx(int, int, int);
+        virtual bool read_probe(int, int);
+        virtual bool write_probe(int, int, bool);
 
-        virtual int  check_ongoing_requests(int, int, BusRequest);
         virtual bool release_bus_mutex();
-        virtual void release_mutex(int, int);
     
     private:
         int id;
         int num_cpus;
 
-        RequestContent *requests;
         sc_mutex bus_mutex;
 };
 

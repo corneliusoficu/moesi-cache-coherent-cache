@@ -8,13 +8,10 @@
 class Bus_if : public virtual sc_interface
 {
     public:
-        virtual bool read(int proc_index, int addr) = 0;
-        virtual bool upgrade(int proc_index, int addr) = 0;
-        virtual bool readx(int proc_index, int addr, int data) = 0;
+        virtual bool read_probe(int proc_index, int addr) = 0;
+        virtual bool write_probe(int proc_index, int addr, bool probe_for_miss) = 0;
         
-        virtual void release_mutex(int proc_index, int addr) = 0;
         virtual bool release_bus_mutex() = 0;
-        virtual int  check_ongoing_requests(int proc_index, int addr, BusRequest operation) = 0;
 };
 
 #endif
