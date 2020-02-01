@@ -180,7 +180,10 @@ int Cache::read_value_from_another_cache_or_memory(bool does_copy_exist, int add
     if(port_cache_to_cache.read().to_int() != -1 && does_copy_exist && port_cache_to_cache.read() != "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ")
     {
         cache_to_cache_transfers++;
+        
         retrieved_data = port_cache_to_cache.read().to_int();
+        
+        log(name(), "Read value from another cache for address", address);
         bus->release_bus_mutex();
         wait();
     }

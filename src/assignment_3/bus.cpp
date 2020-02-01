@@ -10,7 +10,6 @@ Bus::Bus(sc_module_name name_, int id_, int num_cpus_) : sc_module(name_), id(id
     read_probes_miss  = 0;
     write_probes_hit  = 0;
     write_probes_miss = 0;
-    consistency_waits = 0;
 }
 
 Bus::~Bus()
@@ -29,7 +28,7 @@ bool Bus::read_probe(int proc_index, int addr)
 
     read_probes_miss++;
 
-    log(name(), "read for address", addr, "proc index", proc_index);
+    log(name(), "read probe for address", addr, "proc index", proc_index);
 
     port_bus_addr.write(addr);
     port_bus_proc.write(proc_index);
@@ -53,7 +52,7 @@ bool Bus::write_probe(int proc_index, int addr, bool probe_for_miss)
         wait();
     }
 
-    log(name(), "readx for address", addr, "proc index", proc_index);
+    log(name(), "write probe for address", addr, "proc index", proc_index);
     
     port_bus_addr.write(addr);
     port_bus_proc.write(proc_index);

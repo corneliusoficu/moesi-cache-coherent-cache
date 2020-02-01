@@ -14,7 +14,6 @@ class Bus : public Bus_if, public sc_module
         long read_probes_miss;
         long write_probes_hit;
         long write_probes_miss;
-        long consistency_waits;
 
         sc_in<bool>        port_clk;
         sc_port<memory_if> memory;        

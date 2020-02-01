@@ -25,7 +25,6 @@ void print_cache_and_bus_stats(Bus *bus)
     printf("Total bus accesses: %ld\n", total_accesses);
     printf("Number of waits for bus: %ld\n", bus->waits);
     printf("Bus avg waiting time per access: %.2f\n", avg_access_waiting_time);
-    printf("Number of waits to maintain bus consistency: %ld\n", bus->consistency_waits);
     printf("Nr of cache to cache transfers: %ld\n", Cache::cache_to_cache_transfers);
     printf("Average per memory access time: %.2f\n", total_exec_time / (double)total_accesses);
     printf("Total execution time: %.2f\n", total_exec_time);
@@ -127,7 +126,6 @@ int sc_main(int argc, char* argv[])
 
         stats_print();
         print_cache_and_bus_stats(bus);
-        // cout << sc_time_stamp() <<endl;
 
         delete_cpus_and_caches(cpus, caches, nr_processors);
     }
