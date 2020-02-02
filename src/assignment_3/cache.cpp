@@ -160,7 +160,10 @@ int Cache::get_lru_line(int set_address)
     
     if(lru_line_state == LineState::STATE_MODIFIED || lru_line_state == LineState::STATE_OWNED || lru_line_state == STATE_EXCLUSIVE)
     {
-        wait(100); //Simulate write to main memory
+        log("memory", "Writing whole cache line to memory for cache", id);
+        Cache::memory_write_accesses++;
+        wait(100);
+        log("memory", "Finished writing whole cache line to memory in 100 cycles for cache", id);
     }
 
     return line_index;
@@ -190,8 +193,11 @@ int Cache::read_value_from_another_cache_or_memory(bool does_copy_exist, int add
     else
     {
         bus->release_bus_mutex();
+        log("memory", "Reading address from memory", address, "for cache", id);
+        Cache::memory_read_accesses++;
         wait(100); //Simulate memory read
         retrieved_data = rand() % 100;
+        log("memory", "Finnished reading from memory in 100 cycles, address", address, "for cache", id);
     }
 
     return retrieved_data;
@@ -219,11 +225,15 @@ int Cache::cpu_read(uint32_t addr)
         
         if(does_copy_exist)
         {
+            LineState old_state = cache_status[set_address][line_in_set_index];
             cache_status[set_address][line_in_set_index] = LineState::STATE_SHARED;
+            log(name(), "Line", set_address, "transitioned from", line_state_names[old_state], "to", line_state_names[LineState::STATE_SHARED]);
         }
         else
         {
+            LineState old_state = cache_status[set_address][line_in_set_index];
             cache_status[set_address][line_in_set_index] = LineState::STATE_EXCLUSIVE;
+            log(name(), "Line", set_address, "transitioned from", line_state_names[old_state], "to", line_state_names[LineState::STATE_EXCLUSIVE]);
         }
     }
     else
@@ -257,7 +267,11 @@ int Cache::cpu_write(uint32_t addr, uint32_t data)
         retrieved_data = read_value_from_another_cache_or_memory(does_copy_exist, addr);
 
         line_in_set_index = get_lru_line(set_address);
+        
+        LineState old_state = cache_status[set_address][line_in_set_index];
         cache_status[set_address][line_in_set_index] = LineState::STATE_MODIFIED;
+        log(name(), "Line", set_address, "transitioned from", line_state_names[old_state], "to", line_state_names[LineState::STATE_MODIFIED]);
+
         update_lru(set_address, line_in_set_index);
         tags[set_address][line_in_set_index] = tag;
         cache[set_address][line_in_set_index * CACHE_NUMBER_OF_LINES_IN_SET + byte_in_line] = retrieved_data;
@@ -273,7 +287,10 @@ int Cache::cpu_write(uint32_t addr, uint32_t data)
             bus->write_probe(id, addr, false);
         }
         
+        LineState old_state = cache_status[set_address][line_in_set_index];
         cache_status[set_address][line_in_set_index] = LineState::STATE_MODIFIED;
+        log(name(), "Line", set_address, "transitioned from", line_state_names[old_state], "to", line_state_names[LineState::STATE_MODIFIED]);
+
         update_lru(set_address, line_in_set_index);
         cache[set_address][line_in_set_index * CACHE_NUMBER_OF_LINES_IN_SET + byte_in_line] = data;
     }
@@ -364,6 +381,8 @@ DataLookup Cache::coherence_lookup(int snooped_address, BusRequest bus_request)
             found_data.data       = cache[set_address][line_index * CACHE_NUMBER_OF_LINES_IN_SET + byte_in_line];
             found_data.address    = snooped_address;
 
+            LineState old_state = cache_status[set_address][line_index];
+            
             switch(bus_request)
             {
                 case BusRequest::READ_PROBE:
@@ -383,7 +402,9 @@ DataLookup Cache::coherence_lookup(int snooped_address, BusRequest bus_request)
                     break;
             }
 
-            is_found = true;   
+            is_found = true;
+            LineState new_state = cache_status[set_address][line_index];
+            log(name(), "Line ", set_address, "transitioned from", line_state_names[old_state], "to", line_state_names[new_state]);   
         }
     }
 

@@ -17,6 +17,8 @@ class Cache : public cache_if, public sc_module
 
 public:
     static long cache_to_cache_transfers;
+    static long memory_read_accesses;
+    static long memory_write_accesses;
 
     sc_in<bool>       port_clk;
     sc_port<Bus_if>   bus;
@@ -28,6 +30,8 @@ public:
     sc_out_rv<3>      port_provider;
 
     bool can_snoop;
+
+    const char *line_state_names[5] = {"MODIFIED", "OWNED", "EXCLUSIVE", "SHARED", "INVALID"};
     
     Cache(sc_module_name, int);
     ~Cache();
@@ -61,6 +65,7 @@ private:
     void snoop();
     void handle_snooped_value(int, BusRequest, int);
     void invalidate_cache_copy(int);
+
     DataLookup coherence_lookup(int, BusRequest);
     int  read_value_from_another_cache_or_memory(bool, int);
 };

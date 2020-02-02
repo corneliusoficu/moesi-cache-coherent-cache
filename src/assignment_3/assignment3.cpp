@@ -4,13 +4,14 @@
 
 #include "cpu.h"
 #include "cache.h"
-#include "memory.h"
 #include "bus.h"
 
 using namespace std;
 using namespace sc_core; // This pollutes namespace, better: only import what you need.
 
-long Cache::cache_to_cache_transfers    = 0;
+long Cache::cache_to_cache_transfers = 0;
+long Cache::memory_read_accesses     = 0;
+long Cache::memory_write_accesses    = 0;
 
 void print_cache_and_bus_stats(Bus *bus)
 {   
@@ -25,6 +26,8 @@ void print_cache_and_bus_stats(Bus *bus)
     printf("Total bus accesses: %ld\n", total_accesses);
     printf("Number of waits for bus: %ld\n", bus->waits);
     printf("Bus avg waiting time per access: %.2f\n", avg_access_waiting_time);
+    printf("Number of memory read accesses: %ld\n", Cache::memory_read_accesses);
+    printf("Number of memory write accesses: %ld\n", Cache::memory_write_accesses);
     printf("Nr of cache to cache transfers: %ld\n", Cache::cache_to_cache_transfers);
     printf("Average per memory access time: %.2f\n", total_exec_time / (double)total_accesses);
     printf("Total execution time: %.2f\n", total_exec_time);
@@ -41,7 +44,7 @@ void delete_cpus_and_caches(CPU **cpus, Cache** caches, int nr_cpus)
 
 void init_bus_cpus_and_caches(Bus *bus, CPU** cpus, 
                               Cache** caches, int nr_cpus, 
-                              Memory* memory, sc_clock *clk, 
+                              sc_clock *clk, 
                               sc_signal<int> *sig_bus_proc,
                               sc_signal<BusRequest> *sig_bus_valid,
                               sc_signal_rv<32> *sig_cache_to_cache,
@@ -52,7 +55,6 @@ void init_bus_cpus_and_caches(Bus *bus, CPU** cpus,
     Cache* cache;
     CPU*   cpu;
 
-    bus->memory(*memory);
     bus->port_clk(*clk);
     bus->port_bus_proc(*sig_bus_proc);
     bus->port_bus_valid(*sig_bus_valid);
@@ -110,7 +112,6 @@ int sc_main(int argc, char* argv[])
         Cache*  caches[num_cpus];
         
         Bus*    bus    = new Bus("bus", 0, nr_processors);
-        Memory* memory = new Memory("memory");
 
         sc_clock              clk;
         sc_signal<int>        sig_bus_proc;
@@ -119,7 +120,7 @@ int sc_main(int argc, char* argv[])
         sc_signal_rv<1>       sig_do_i_have;
         sc_signal_rv<3>       sig_provider;
 
-        init_bus_cpus_and_caches(bus, cpus, caches, nr_processors, memory, &clk, 
+        init_bus_cpus_and_caches(bus, cpus, caches, nr_processors, &clk, 
                                  &sig_bus_proc, &sig_bus_valid, &sig_cache_to_cache, &sig_do_i_have, &sig_provider);
 
         sc_start();

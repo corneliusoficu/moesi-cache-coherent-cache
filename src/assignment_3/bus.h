@@ -4,7 +4,6 @@
 #include <systemc.h>
 
 #include "bus_if.h"
-#include "memory_if.h"
 #include "cache.h"
 
 class Bus : public Bus_if, public sc_module
@@ -15,8 +14,7 @@ class Bus : public Bus_if, public sc_module
         long write_probes_hit;
         long write_probes_miss;
 
-        sc_in<bool>        port_clk;
-        sc_port<memory_if> memory;        
+        sc_in<bool>        port_clk;        
         sc_signal_rv<32>   port_bus_addr;
         sc_out<BusRequest> port_bus_valid;
         sc_out<int>        port_bus_proc;

@@ -11,11 +11,11 @@ enum BusRequest
 
 enum LineState
 {
-    STATE_MODIFIED,
-    STATE_OWNED,
-    STATE_EXCLUSIVE,
-    STATE_SHARED,
-    STATE_INVALID
+    STATE_MODIFIED  = 0,
+    STATE_OWNED     = 1,
+    STATE_EXCLUSIVE = 2,
+    STATE_SHARED    = 3,
+    STATE_INVALID   = 4
 };
 
 typedef struct
